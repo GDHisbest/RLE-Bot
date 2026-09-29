@@ -1,0 +1,14 @@
+{
+    "geode": "5.10.1",
+    "gd": {
+        "win": "2.2081",
+        "android": "2.2081",
+        "ios": "2.2081",
+        "mac": "2.2081"
+    },
+    "id": "flim.RLE-bot.geode",
+    "name": "RLE Bot",
+    "version": "v1.0.0",
+    "developer": "flim",
+    "description": "Frame-accurate input recording and playback with .rle format."
+}
