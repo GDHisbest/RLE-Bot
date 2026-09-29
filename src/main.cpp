@@ -202,7 +202,7 @@ class $modify(MyPlayLayer, PlayLayer) {
 
 class $modify(MyGJBaseGameLayer, GJBaseGameLayer) {
     void handleButton(bool down, int button, bool player2) {
-        // Проверка: пишем только в игре, не в меню
+        // Записываем только если мы в игре и идёт запись
         if (g_isRecording && !g_isPlaying && PlayLayer::get()) {
             g_recordedInputs.push_back({g_currentFrame, button, down, player2});
         }
@@ -211,43 +211,68 @@ class $modify(MyGJBaseGameLayer, GJBaseGameLayer) {
 };
 
 class $modify(MyPauseLayer, PauseLayer) {
+    struct Fields {
+        CCMenu* m_subMenu = nullptr;
+        bool m_expanded = false;
+    };
+
     void customSetup() {
         PauseLayer::customSetup();
 
         auto winSize = CCDirector::get()->getWinSize();
-        auto menu = CCMenu::create();
-        menu->setPosition({0, 0});
-        this->addChild(menu);
+
+        // Главное меню с одной кнопкой BOT
+        auto mainMenu = CCMenu::create();
+        mainMenu->setPosition({0, 0});
+        this->addChild(mainMenu);
+
+        auto botBtn = CCMenuItemSpriteExtra::create(
+            ButtonSprite::create("BOT", "bigFont.fnt", "GJ_button_01.png"),
+            this, menu_selector(MyPauseLayer::onToggle));
+        botBtn->setPosition({winSize.width - 60.f, 60.f});
+        mainMenu->addChild(botBtn);
+
+        // Подменю с 4 кнопками (скрыто изначально)
+        m_fields->m_subMenu = CCMenu::create();
+        m_fields->m_subMenu->setPosition({0, 0});
+        m_fields->m_subMenu->setVisible(false);
+        this->addChild(m_fields->m_subMenu);
 
         auto recBtn = CCMenuItemSpriteExtra::create(
             ButtonSprite::create("REC", "bigFont.fnt", "GJ_button_01.png"),
             this, menu_selector(MyPauseLayer::onRecord));
-        recBtn->setPosition({winSize.width - 60.f, 150.f});
-        menu->addChild(recBtn);
+        recBtn->setPosition({winSize.width - 60.f, 110.f});
+        m_fields->m_subMenu->addChild(recBtn);
 
         auto playBtn = CCMenuItemSpriteExtra::create(
             ButtonSprite::create("PLAY", "bigFont.fnt", "GJ_button_02.png"),
             this, menu_selector(MyPauseLayer::onPlay));
-        playBtn->setPosition({winSize.width - 60.f, 110.f});
-        menu->addChild(playBtn);
+        playBtn->setPosition({winSize.width - 60.f, 150.f});
+        m_fields->m_subMenu->addChild(playBtn);
 
         auto saveBtn = CCMenuItemSpriteExtra::create(
             ButtonSprite::create("SAVE", "bigFont.fnt", "GJ_button_03.png"),
             this, menu_selector(MyPauseLayer::onSave));
-        saveBtn->setPosition({winSize.width - 60.f, 70.f});
-        menu->addChild(saveBtn);
+        saveBtn->setPosition({winSize.width - 60.f, 190.f});
+        m_fields->m_subMenu->addChild(saveBtn);
 
         auto loadBtn = CCMenuItemSpriteExtra::create(
             ButtonSprite::create("LOAD", "bigFont.fnt", "GJ_button_04.png"),
             this, menu_selector(MyPauseLayer::onLoad));
-        loadBtn->setPosition({winSize.width - 60.f, 30.f});
-        menu->addChild(loadBtn);
+        loadBtn->setPosition({winSize.width - 60.f, 230.f});
+        m_fields->m_subMenu->addChild(loadBtn);
 
+        // Статус-лейбл над BOT
         g_statusLabel = CCLabelBMFont::create("", "bigFont.fnt");
         g_statusLabel->setScale(0.4f);
-        g_statusLabel->setPosition({winSize.width - 60.f, 185.f});
-        menu->addChild(g_statusLabel);
+        g_statusLabel->setPosition({winSize.width - 60.f, 95.f});
+        mainMenu->addChild(g_statusLabel);
         updateStatusLabel();
+    }
+
+    void onToggle(CCObject*) {
+        m_fields->m_expanded = !m_fields->m_expanded;
+        m_fields->m_subMenu->setVisible(m_fields->m_expanded);
     }
 
     void onRecord(CCObject*) {
