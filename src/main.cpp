@@ -22,14 +22,13 @@ static size_t g_playbackIndex = 0;
 static CCLabelBMFont* g_statusLabel = nullptr;
 
 // ==========================================
-// Формат .rle v2 — максимально плотный
+// Формат .rle v2
 // ==========================================
 // "RLE\0"        — магия (4 байта)
 // version = 2    — 1 байт
 // eventCount     — varint
 // delta stream   — eventCount varint'ов
 // action stream  — ceil(eventCount × 4 / 8) байт
-//                  действие = 4 бита: button(2) | down(1) | player2(1)
 // ==========================================
 
 static void writeVarint(std::ofstream& f, uint32_t value) {
@@ -165,7 +164,7 @@ static bool loadReplay() {
 static void updateStatusLabel() {
     if (!g_statusLabel) return;
     if (g_isRecording) {
-        g_statusLabel->setString(fmt::format("REC: {} frames", g_currentFrame).c_str());
+        g_statusLabel->setString(fmt::format("REC: {}", g_currentFrame).c_str());
         g_statusLabel->setColor({255, 100, 100});
     } else if (g_isPlaying) {
         g_statusLabel->setString("PLAYING...");
@@ -203,7 +202,8 @@ class $modify(MyPlayLayer, PlayLayer) {
 
 class $modify(MyGJBaseGameLayer, GJBaseGameLayer) {
     void handleButton(bool down, int button, bool player2) {
-        if (g_isRecording && !g_isPlaying) {
+        // Проверка: пишем только в игре, не в меню
+        if (g_isRecording && !g_isPlaying && PlayLayer::get()) {
             g_recordedInputs.push_back({g_currentFrame, button, down, player2});
         }
         GJBaseGameLayer::handleButton(down, button, player2);
@@ -219,29 +219,33 @@ class $modify(MyPauseLayer, PauseLayer) {
         menu->setPosition({0, 0});
         this->addChild(menu);
 
-        auto recSpr = ButtonSprite::create("REC", "bigFont.fnt", "GJ_button_01.png", 0.8f);
-        auto recBtn = CCMenuItemSpriteExtra::create(recSpr, this, menu_selector(MyPauseLayer::onRecord));
-        recBtn->setPosition({winSize.width - 80.f, 150.f});
+        auto recBtn = CCMenuItemSpriteExtra::create(
+            ButtonSprite::create("REC", "bigFont.fnt", "GJ_button_01.png"),
+            this, menu_selector(MyPauseLayer::onRecord));
+        recBtn->setPosition({winSize.width - 60.f, 150.f});
         menu->addChild(recBtn);
 
-        auto playSpr = ButtonSprite::create("PLAY", "bigFont.fnt", "GJ_button_02.png", 0.8f);
-        auto playBtn = CCMenuItemSpriteExtra::create(playSpr, this, menu_selector(MyPauseLayer::onPlay));
-        playBtn->setPosition({winSize.width - 80.f, 110.f});
+        auto playBtn = CCMenuItemSpriteExtra::create(
+            ButtonSprite::create("PLAY", "bigFont.fnt", "GJ_button_02.png"),
+            this, menu_selector(MyPauseLayer::onPlay));
+        playBtn->setPosition({winSize.width - 60.f, 110.f});
         menu->addChild(playBtn);
 
-        auto saveSpr = ButtonSprite::create("SAVE", "bigFont.fnt", "GJ_button_03.png", 0.8f);
-        auto saveBtn = CCMenuItemSpriteExtra::create(saveSpr, this, menu_selector(MyPauseLayer::onSave));
-        saveBtn->setPosition({winSize.width - 80.f, 70.f});
+        auto saveBtn = CCMenuItemSpriteExtra::create(
+            ButtonSprite::create("SAVE", "bigFont.fnt", "GJ_button_03.png"),
+            this, menu_selector(MyPauseLayer::onSave));
+        saveBtn->setPosition({winSize.width - 60.f, 70.f});
         menu->addChild(saveBtn);
 
-        auto loadSpr = ButtonSprite::create("LOAD", "bigFont.fnt", "GJ_button_04.png", 0.8f);
-        auto loadBtn = CCMenuItemSpriteExtra::create(loadSpr, this, menu_selector(MyPauseLayer::onLoad));
-        loadBtn->setPosition({winSize.width - 80.f, 30.f});
+        auto loadBtn = CCMenuItemSpriteExtra::create(
+            ButtonSprite::create("LOAD", "bigFont.fnt", "GJ_button_04.png"),
+            this, menu_selector(MyPauseLayer::onLoad));
+        loadBtn->setPosition({winSize.width - 60.f, 30.f});
         menu->addChild(loadBtn);
 
         g_statusLabel = CCLabelBMFont::create("", "bigFont.fnt");
-        g_statusLabel->setScale(0.5f);
-        g_statusLabel->setPosition({winSize.width - 80.f, 185.f});
+        g_statusLabel->setScale(0.4f);
+        g_statusLabel->setPosition({winSize.width - 60.f, 185.f});
         menu->addChild(g_statusLabel);
         updateStatusLabel();
     }
