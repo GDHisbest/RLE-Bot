@@ -224,9 +224,13 @@ class $modify(MyGJBaseGameLayer, GJBaseGameLayer) {
 };
 
 // ==========================================
-// PlayLayer: кнопка паузы/плея в левом нижнем углу
+// PlayLayer: кнопки в левом нижнем углу
 // ==========================================
 class $modify(MyPlayLayer, PlayLayer) {
+    struct Fields {
+        CCMenuItemSpriteExtra* m_stepBtn = nullptr;
+    };
+
     bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
         if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
 
@@ -244,6 +248,16 @@ class $modify(MyPlayLayer, PlayLayer) {
                 pauseSpr, this, menu_selector(MyPlayLayer::onStepToggle));
             g_stepButton->setPosition({30.f, 30.f});
             menu->addChild(g_stepButton);
+        }
+
+        auto stepSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
+        if (!stepSpr) stepSpr = CCSprite::createWithSpriteFrameName("edit_arrow.png");
+        if (stepSpr) {
+            stepSpr->setScale(0.8f);
+            m_fields->m_stepBtn = CCMenuItemSpriteExtra::create(
+                stepSpr, this, menu_selector(MyPlayLayer::onStepAdvance));
+            m_fields->m_stepBtn->setPosition({70.f, 30.f});
+            menu->addChild(m_fields->m_stepBtn);
         }
 
         g_stepLabel = CCLabelBMFont::create("", "bigFont.fnt");
@@ -275,6 +289,10 @@ class $modify(MyPlayLayer, PlayLayer) {
         if (g_stepLabel) {
             g_stepLabel->setString(g_frameStepperEnabled ? "PAUSED" : "");
         }
+    }
+
+    void onStepAdvance(CCObject*) {
+        g_stepperAdvance = true;
     }
 
     void update(float dt) {
@@ -333,15 +351,6 @@ class $modify(MyPauseLayer, PauseLayer) {
             this, menu_selector(MyPauseLayer::onSearch));
         searchBtn->setPosition({winSize.width - 60.f, 230.f}); m_fields->m_subMenu->addChild(searchBtn);
 
-        auto stepSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
-        if (stepSpr) {
-            stepSpr->setScale(0.7f);
-            auto stepBtn = CCMenuItemSpriteExtra::create(
-                stepSpr, this, menu_selector(MyPauseLayer::onStep));
-            stepBtn->setPosition({winSize.width - 60.f, 270.f});
-            m_fields->m_subMenu->addChild(stepBtn);
-        }
-
         g_statusLabel = CCLabelBMFont::create("", "bigFont.fnt");
         g_statusLabel->setScale(0.4f); g_statusLabel->setPosition({winSize.width - 60.f, 95.f});
         mainMenu->addChild(g_statusLabel); updateStatusLabel();
@@ -388,7 +397,6 @@ class $modify(MyPauseLayer, PauseLayer) {
         }
         updateStatusLabel();
     }
-    void onStep(CCObject*) { g_stepperAdvance = true; }
 };
 
 // ==========================================
