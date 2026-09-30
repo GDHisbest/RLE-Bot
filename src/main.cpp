@@ -191,7 +191,15 @@ class $modify(MyPlayLayer, PlayLayer) {
             while (g_playbackIndex < g_recordedInputs.size() &&
                    g_recordedInputs[g_playbackIndex].frame <= g_currentFrame) {
                 auto& input = g_recordedInputs[g_playbackIndex];
-                this->handleButton(input.down, input.button, input.player2);
+
+                auto player = input.player2 ? this->m_player2 : this->m_player1;
+                if (player) {
+                    if (input.down) {
+                        player->pushButton(static_cast<PlayerButton>(input.button));
+                    } else {
+                        player->releaseButton(static_cast<PlayerButton>(input.button));
+                    }
+                }
                 g_playbackIndex++;
             }
         }
@@ -201,7 +209,6 @@ class $modify(MyPlayLayer, PlayLayer) {
         PlayLayer::resetLevel();
         g_currentFrame = 0;
         g_playbackIndex = 0;
-        // updateStatusLabel() убран — метка может быть мертва
     }
 };
 
