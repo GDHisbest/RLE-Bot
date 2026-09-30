@@ -236,7 +236,6 @@ class $modify(MyPlayLayer, PlayLayer) {
         menu->setPosition({0, 0});
         this->addChild(menu, 100);
 
-        // Кнопка в ЛЕВОМ НИЖНЕМ углу
         auto pauseSpr = CCSprite::createWithSpriteFrameName("GJ_pauseBtn_001.png");
         if (!pauseSpr) pauseSpr = CCSprite::createWithSpriteFrameName("pauseButton_001.png");
         if (pauseSpr) {
@@ -334,7 +333,6 @@ class $modify(MyPauseLayer, PauseLayer) {
             this, menu_selector(MyPauseLayer::onSearch));
         searchBtn->setPosition({winSize.width - 60.f, 230.f}); m_fields->m_subMenu->addChild(searchBtn);
 
-        // Кнопка STEP (стрелка) со спрайтом
         auto stepSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
         if (stepSpr) {
             stepSpr->setScale(0.7f);
@@ -397,10 +395,10 @@ class $modify(MyPauseLayer, PauseLayer) {
 // Инициализация настроек
 // ==========================================
 $execute {
-    listenForSettingChanges("speedhack-value", [](double value) {
+    listenForSettingChanges<double>("speedhack-value", [](double value) {
         g_speedhackValue = value;
     });
-    listenForSettingChanges("tps-value", [](double value) {
+    listenForSettingChanges<double>("tps-value", [](double value) {
         g_tpsValue = value;
     });
     g_speedhackValue = Mod::get()->getSettingValue<double>("speedhack-value");
