@@ -3,19 +3,15 @@
 #include <Geode/modify/PlayerObject.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/PauseLayer.hpp>
+#include <Geode/modify/CCScheduler.hpp>
 #include <fstream>
 #include <cstring>
 #include <filesystem>
 
 using namespace geode::prelude;
 
-struct InputFrame {
-    int frame;
-    int button;
-    bool down;
-    bool player2;
-};
-
+// --- Глобальные переменные ---
+struct InputFrame { int frame; int button; bool down; bool player2; };
 static std::vector<InputFrame> g_recordedInputs;
 static int g_currentFrame = 0;
 static bool g_isRecording = false;
@@ -24,14 +20,19 @@ static size_t g_playbackIndex = 0;
 static CCLabelBMFont* g_statusLabel = nullptr;
 static std::string g_loadedMacroName = "";
 
+static CCMenuItemSpriteExtra* g_stepButton = nullptr;
+static CCLabelBMFont* g_stepLabel = nullptr;
+static bool g_frameStepperEnabled = false;
+static bool g_stepperAdvance = false;
+
+static double g_speedhackValue = 1.0;
+static double g_tpsValue = 60.0;
+static bool g_lockDelta = false;
+static bool g_useVisualUpdates = false;
+static float g_lockedDelta = 1.0f / 240.0f;
+
 // ==========================================
 // Формат .rle v2
-// ==========================================
-// "RLE\0"        — магия (4 байта)
-// version = 2    — 1 байт
-// eventCount     — varint
-// delta stream   — eventCount varint'ов
-// action stream  — ceil(eventCount × 4 / 8) байт
 // ==========================================
 
 static void writeVarint(std::ofstream& f, uint32_t value) {
@@ -165,9 +166,33 @@ static void updateStatusLabel() {
     }
 }
 
+// ==========================================
+// Speedhack / TPS / Lock Delta / Frame Stepper
+// ==========================================
+class $modify(MyScheduler, cocos2d::CCScheduler) {
+    void update(float dt) {
+        auto playLayer = PlayLayer::get();
+        if (!playLayer || playLayer->m_isPaused) {
+            cocos2d::CCScheduler::update(dt);
+            return;
+        }
+
+        if (g_frameStepperEnabled) return;
+
+        float effectiveDt = dt;
+        if (g_lockDelta) effectiveDt = g_lockedDelta;
+        if (!g_lockDelta) effectiveDt *= static_cast<float>(g_speedhackValue);
+        effectiveDt *= static_cast<float>(g_tpsValue / 60.0);
+
+        cocos2d::CCScheduler::update(effectiveDt);
+    }
+};
+
+// ==========================================
+// Игрок (воспроизведение)
+// ==========================================
 class $modify(MyPlayerObject, PlayerObject) {
     void update(float dt) {
-        // Воспроизводим ввод перед оригинальным update
         if (g_isPlaying && !g_recordedInputs.empty()) {
             while (g_playbackIndex < g_recordedInputs.size() &&
                    g_recordedInputs[g_playbackIndex].frame <= g_currentFrame) {
@@ -176,12 +201,7 @@ class $modify(MyPlayerObject, PlayerObject) {
                 if (input.player2 == isP2) {
                     int btn = input.button;
                     if (btn >= 0 && btn < 3) {
-                        if (input.down) {
-                            m_holdingButtons[btn] = true;
-                            m_wasButtonPressed[btn] = true;
-                        } else {
-                            m_holdingButtons[btn] = false;
-                        }
+                        m_holdingButtons[btn] = input.down;
                     }
                 }
                 g_playbackIndex++;
@@ -191,6 +211,9 @@ class $modify(MyPlayerObject, PlayerObject) {
     }
 };
 
+// ==========================================
+// Запись
+// ==========================================
 class $modify(MyGJBaseGameLayer, GJBaseGameLayer) {
     void handleButton(bool down, int button, bool player2) {
         if (g_isRecording && !g_isPlaying && PlayLayer::get()) {
@@ -200,11 +223,72 @@ class $modify(MyGJBaseGameLayer, GJBaseGameLayer) {
     }
 };
 
+// ==========================================
+// PlayLayer: кнопка паузы/плея в левом нижнем углу
+// ==========================================
 class $modify(MyPlayLayer, PlayLayer) {
+    bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
+        if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
+
+        auto winSize = CCDirector::get()->getWinSize();
+
+        auto menu = CCMenu::create();
+        menu->setPosition({0, 0});
+        this->addChild(menu, 100);
+
+        // Кнопка в ЛЕВОМ НИЖНЕМ углу
+        auto pauseSpr = CCSprite::createWithSpriteFrameName("GJ_pauseBtn_001.png");
+        if (!pauseSpr) pauseSpr = CCSprite::createWithSpriteFrameName("pauseButton_001.png");
+        if (pauseSpr) {
+            pauseSpr->setScale(0.8f);
+            g_stepButton = CCMenuItemSpriteExtra::create(
+                pauseSpr, this, menu_selector(MyPlayLayer::onStepToggle));
+            g_stepButton->setPosition({30.f, 30.f});
+            menu->addChild(g_stepButton);
+        }
+
+        g_stepLabel = CCLabelBMFont::create("", "bigFont.fnt");
+        g_stepLabel->setScale(0.3f);
+        g_stepLabel->setPosition({30.f, 60.f});
+        menu->addChild(g_stepLabel);
+
+        return true;
+    }
+
+    void onStepToggle(CCObject*) {
+        g_frameStepperEnabled = !g_frameStepperEnabled;
+
+        if (g_stepButton) {
+            CCSprite* newSpr = nullptr;
+            if (g_frameStepperEnabled) {
+                newSpr = CCSprite::createWithSpriteFrameName("GJ_playBtn_001.png");
+                if (!newSpr) newSpr = CCSprite::createWithSpriteFrameName("playButton_001.png");
+            } else {
+                newSpr = CCSprite::createWithSpriteFrameName("GJ_pauseBtn_001.png");
+                if (!newSpr) newSpr = CCSprite::createWithSpriteFrameName("pauseButton_001.png");
+            }
+            if (newSpr) {
+                newSpr->setScale(0.8f);
+                g_stepButton->setSprite(newSpr);
+            }
+        }
+
+        if (g_stepLabel) {
+            g_stepLabel->setString(g_frameStepperEnabled ? "PAUSED" : "");
+        }
+    }
+
     void update(float dt) {
         PlayLayer::update(dt);
         if (g_isRecording) { g_currentFrame++; updateStatusLabel(); }
+
+        if (g_frameStepperEnabled && g_stepperAdvance) {
+            g_stepperAdvance = false;
+            g_currentFrame++;
+            PlayLayer::update(1.0f / 60.0f);
+        }
     }
+
     void resetLevel() {
         PlayLayer::resetLevel();
         g_currentFrame = 0;
@@ -212,6 +296,9 @@ class $modify(MyPlayLayer, PlayLayer) {
     }
 };
 
+// ==========================================
+// Меню паузы
+// ==========================================
 class $modify(MyPauseLayer, PauseLayer) {
     struct Fields {
         CCMenu* m_subMenu = nullptr;
@@ -246,6 +333,16 @@ class $modify(MyPauseLayer, PauseLayer) {
         auto searchBtn = CCMenuItemSpriteExtra::create(ButtonSprite::create("SEARCH", "bigFont.fnt", "GJ_button_04.png"),
             this, menu_selector(MyPauseLayer::onSearch));
         searchBtn->setPosition({winSize.width - 60.f, 230.f}); m_fields->m_subMenu->addChild(searchBtn);
+
+        // Кнопка STEP (стрелка) со спрайтом
+        auto stepSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
+        if (stepSpr) {
+            stepSpr->setScale(0.7f);
+            auto stepBtn = CCMenuItemSpriteExtra::create(
+                stepSpr, this, menu_selector(MyPauseLayer::onStep));
+            stepBtn->setPosition({winSize.width - 60.f, 270.f});
+            m_fields->m_subMenu->addChild(stepBtn);
+        }
 
         g_statusLabel = CCLabelBMFont::create("", "bigFont.fnt");
         g_statusLabel->setScale(0.4f); g_statusLabel->setPosition({winSize.width - 60.f, 95.f});
@@ -282,12 +379,7 @@ class $modify(MyPauseLayer, PauseLayer) {
                 }
             }
         }
-
-        if (macroNames.empty()) {
-            FLAlertLayer::create("Search", "No macros found.", "OK")->show();
-            return;
-        }
-
+        if (macroNames.empty()) { FLAlertLayer::create("Search", "No macros found.", "OK")->show(); return; }
         std::string firstName = macroNames[0];
         auto fullPath = dir / (firstName + ".rle");
         if (loadReplayFrom(fullPath)) {
@@ -298,4 +390,19 @@ class $modify(MyPauseLayer, PauseLayer) {
         }
         updateStatusLabel();
     }
+    void onStep(CCObject*) { g_stepperAdvance = true; }
 };
+
+// ==========================================
+// Инициализация настроек
+// ==========================================
+$execute {
+    listenForSettingChanges("speedhack-value", [](double value) {
+        g_speedhackValue = value;
+    });
+    listenForSettingChanges("tps-value", [](double value) {
+        g_tpsValue = value;
+    });
+    g_speedhackValue = Mod::get()->getSettingValue<double>("speedhack-value");
+    g_tpsValue = Mod::get()->getSettingValue<double>("tps-value");
+}
