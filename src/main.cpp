@@ -1,5 +1,6 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/GJBaseGameLayer.hpp>
+#include <Geode/modify/PlayerObject.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/PauseLayer.hpp>
 #include <fstream>
@@ -180,35 +181,28 @@ static void updateStatusLabel() {
     }
 }
 
-class $modify(MyPlayLayer, PlayLayer) {
+class $modify(MyPlayerObject, PlayerObject) {
     void update(float dt) {
-        PlayLayer::update(dt);
-        if (g_isRecording) {
-            g_currentFrame++;
-            updateStatusLabel();
-        }
+        PlayerObject::update(dt);
+
+        // Воспроизводим ввод ТОЛЬКО во время update игрока
         if (g_isPlaying && !g_recordedInputs.empty()) {
             while (g_playbackIndex < g_recordedInputs.size() &&
                    g_recordedInputs[g_playbackIndex].frame <= g_currentFrame) {
                 auto& input = g_recordedInputs[g_playbackIndex];
 
-                auto player = input.player2 ? this->m_player2 : this->m_player1;
-                if (player) {
+                // Проверяем, что это наш игрок (P1 или P2)
+                bool isP2 = (PlayLayer::get() && PlayLayer::get()->m_player2 == this);
+                if (input.player2 == isP2) {
                     if (input.down) {
-                        player->pushButton(static_cast<PlayerButton>(input.button));
+                        this->pushButton(static_cast<PlayerButton>(input.button));
                     } else {
-                        player->releaseButton(static_cast<PlayerButton>(input.button));
+                        this->releaseButton(static_cast<PlayerButton>(input.button));
                     }
                 }
                 g_playbackIndex++;
             }
         }
-    }
-
-    void resetLevel() {
-        PlayLayer::resetLevel();
-        g_currentFrame = 0;
-        g_playbackIndex = 0;
     }
 };
 
@@ -218,6 +212,22 @@ class $modify(MyGJBaseGameLayer, GJBaseGameLayer) {
             g_recordedInputs.push_back({g_currentFrame, button, down, player2});
         }
         GJBaseGameLayer::handleButton(down, button, player2);
+    }
+};
+
+class $modify(MyPlayLayer, PlayLayer) {
+    void update(float dt) {
+        PlayLayer::update(dt);
+        if (g_isRecording) {
+            g_currentFrame++;
+            updateStatusLabel();
+        }
+    }
+
+    void resetLevel() {
+        PlayLayer::resetLevel();
+        g_currentFrame = 0;
+        g_playbackIndex = 0;
     }
 };
 
