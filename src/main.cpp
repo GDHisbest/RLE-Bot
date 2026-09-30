@@ -163,8 +163,7 @@ static bool loadReplay() {
 
 static void updateStatusLabel() {
     if (!g_statusLabel) return;
-    if (!g_statusLabel->getParent()) return;
-    if (g_statusLabel->getReferenceCount() == 1) {
+    if (!g_statusLabel->getParent()) {
         g_statusLabel = nullptr;
         return;
     }
