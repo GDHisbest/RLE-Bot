@@ -163,6 +163,12 @@ static bool loadReplay() {
 
 static void updateStatusLabel() {
     if (!g_statusLabel) return;
+    if (!g_statusLabel->getParent()) return;
+    if (g_statusLabel->getReferenceCount() == 1) {
+        g_statusLabel = nullptr;
+        return;
+    }
+
     if (g_isRecording) {
         g_statusLabel->setString(fmt::format("REC: {}", g_currentFrame).c_str());
         g_statusLabel->setColor({255, 100, 100});
@@ -186,8 +192,6 @@ class $modify(MyPlayLayer, PlayLayer) {
             while (g_playbackIndex < g_recordedInputs.size() &&
                    g_recordedInputs[g_playbackIndex].frame <= g_currentFrame) {
                 auto& input = g_recordedInputs[g_playbackIndex];
-
-                // handleButton принимает bool, int, bool
                 this->handleButton(input.down, input.button, input.player2);
                 g_playbackIndex++;
             }
@@ -198,7 +202,7 @@ class $modify(MyPlayLayer, PlayLayer) {
         PlayLayer::resetLevel();
         g_currentFrame = 0;
         g_playbackIndex = 0;
-        updateStatusLabel();
+        // updateStatusLabel() убран — метка может быть мертва
     }
 };
 
