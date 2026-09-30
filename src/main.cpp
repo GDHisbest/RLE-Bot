@@ -202,7 +202,6 @@ class $modify(MyPlayLayer, PlayLayer) {
 
 class $modify(MyGJBaseGameLayer, GJBaseGameLayer) {
     void handleButton(bool down, int button, bool player2) {
-        // Записываем только если мы в игре и идёт запись
         if (g_isRecording && !g_isPlaying && PlayLayer::get()) {
             g_recordedInputs.push_back({g_currentFrame, button, down, player2});
         }
@@ -221,7 +220,6 @@ class $modify(MyPauseLayer, PauseLayer) {
 
         auto winSize = CCDirector::get()->getWinSize();
 
-        // Главное меню с одной кнопкой BOT
         auto mainMenu = CCMenu::create();
         mainMenu->setPosition({0, 0});
         this->addChild(mainMenu);
@@ -232,7 +230,6 @@ class $modify(MyPauseLayer, PauseLayer) {
         botBtn->setPosition({winSize.width - 60.f, 60.f});
         mainMenu->addChild(botBtn);
 
-        // Подменю с 4 кнопками (скрыто изначально)
         m_fields->m_subMenu = CCMenu::create();
         m_fields->m_subMenu->setPosition({0, 0});
         m_fields->m_subMenu->setVisible(false);
@@ -262,7 +259,6 @@ class $modify(MyPauseLayer, PauseLayer) {
         loadBtn->setPosition({winSize.width - 60.f, 230.f});
         m_fields->m_subMenu->addChild(loadBtn);
 
-        // Статус-лейбл над BOT
         g_statusLabel = CCLabelBMFont::create("", "bigFont.fnt");
         g_statusLabel->setScale(0.4f);
         g_statusLabel->setPosition({winSize.width - 60.f, 95.f});
@@ -288,7 +284,7 @@ class $modify(MyPauseLayer, PauseLayer) {
     void onPlay(CCObject*) {
         if (g_isRecording) g_isRecording = false;
         if (g_recordedInputs.empty()) {
-            FLAlertLayer::create("Replay Bot", "No inputs recorded!", "OK")->show();
+            FLAlertLayer::create("RLE Bot", "No inputs recorded!", "OK")->show();
             return;
         }
         g_isPlaying = !g_isPlaying;
@@ -301,19 +297,19 @@ class $modify(MyPauseLayer, PauseLayer) {
 
     void onSave(CCObject*) {
         if (g_recordedInputs.empty()) {
-            FLAlertLayer::create("Replay Bot", "Nothing to save!", "OK")->show();
+            FLAlertLayer::create("RLE Bot", "Nothing to save!", "OK")->show();
             return;
         }
         saveReplay();
-        FLAlertLayer::create("Replay Bot", "Replay saved to replay.rle", "OK")->show();
+        FLAlertLayer::create("RLE Bot", "Replay saved to replay.rle", "OK")->show();
     }
 
     void onLoad(CCObject*) {
         if (loadReplay()) {
-            FLAlertLayer::create("Replay Bot",
+            FLAlertLayer::create("RLE Bot",
                 fmt::format("Loaded {} events", g_recordedInputs.size()).c_str(), "OK")->show();
         } else {
-            FLAlertLayer::create("Replay Bot", "Failed to load replay.rle", "OK")->show();
+            FLAlertLayer::create("RLE Bot", "Failed to load replay.rle", "OK")->show();
         }
         updateStatusLabel();
     }
