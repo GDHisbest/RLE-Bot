@@ -6,10 +6,34 @@
         "ios": "2.2081",
         "mac": "2.2081"
     },
-    "id": "flim.rlebot",
+    "id": "flim.rlebot.geode",
     "name": "RLE Bot",
-    "version": "v1.0.0",
+    "version": "v1.1.0",
     "developer": "flim",
-    "description": "Frame-accurate input recording and playback with .rle format.",
-    "logo": "logo.png"
+    "description": "Bot with TPS, Frame Stepper and Speedhack.",
+    "logo": "logo.png",
+    "settings": {
+        "speedhack-value": {
+            "name": "Speedhack",
+            "description": "0.00001x to 400x",
+            "type": "float",
+            "default": 1.0,
+            "min": 0.00001,
+            "max": 400.0,
+            "control": {
+                "type": "text-input"
+            }
+        },
+        "tps-value": {
+            "name": "TPS",
+            "description": "Physics ticks per second (max 240).",
+            "type": "float",
+            "default": 240.0,
+            "min": 1.0,
+            "max": 240.0,
+            "control": {
+                "type": "text-input"
+            }
+        }
+    }
 }
