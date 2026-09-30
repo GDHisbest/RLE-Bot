@@ -5,6 +5,7 @@
 #include <Geode/modify/PauseLayer.hpp>
 #include <fstream>
 #include <cstring>
+#include <filesystem>
 
 using namespace geode::prelude;
 
@@ -21,6 +22,7 @@ static bool g_isRecording = false;
 static bool g_isPlaying = false;
 static size_t g_playbackIndex = 0;
 static CCLabelBMFont* g_statusLabel = nullptr;
+static std::string g_loadedMacroName = "";
 
 // ==========================================
 // Формат .rle v2
@@ -54,21 +56,22 @@ static uint32_t readVarint(std::ifstream& f) {
     return result;
 }
 
-static std::filesystem::path getReplayPath() {
-    return Mod::get()->getSaveDir() / "replay.rle";
+static std::filesystem::path getReplayDir() {
+    return Mod::get()->getSaveDir();
 }
 
-static void saveReplay() {
-    std::ofstream file(getReplayPath(), std::ios::binary);
-    if (!file) {
-        log::error("Failed to open file for writing");
-        return;
-    }
+static std::filesystem::path getReplayPath() {
+    return getReplayDir() / "replay.rle";
+}
+
+static void saveReplayAs(const std::string& name) {
+    std::filesystem::path path = getReplayDir() / (name + ".rle");
+    std::ofstream file(path, std::ios::binary);
+    if (!file) return;
 
     const char magic[4] = {'R', 'L', 'E', '\0'};
     file.write(magic, 4);
     file.put(static_cast<char>(2));
-
     writeVarint(file, static_cast<uint32_t>(g_recordedInputs.size()));
 
     int prevFrame = 0;
@@ -87,7 +90,6 @@ static void saveReplay() {
 
         buffer |= static_cast<uint8_t>(action << bitsFilled);
         bitsFilled += 4;
-
         if (bitsFilled == 8) {
             file.put(static_cast<char>(buffer));
             buffer = 0;
@@ -95,37 +97,21 @@ static void saveReplay() {
         }
     }
     if (bitsFilled > 0) file.put(static_cast<char>(buffer));
-
-    file.close();
-    log::info("Replay saved: {} events, {} bytes",
-              g_recordedInputs.size(),
-              std::filesystem::file_size(getReplayPath()));
 }
 
-static bool loadReplay() {
-    std::ifstream file(getReplayPath(), std::ios::binary);
-    if (!file) {
-        log::warn("No replay file found");
-        return false;
-    }
+static bool loadReplayFrom(const std::filesystem::path& path) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) return false;
 
     char magic[4];
     file.read(magic, 4);
-    if (std::memcmp(magic, "RLE", 3) != 0) {
-        log::error("Invalid .rle file: bad magic");
-        return false;
-    }
+    if (std::memcmp(magic, "RLE", 3) != 0) return false;
 
     char versionByte;
     file.get(versionByte);
-    uint8_t version = static_cast<uint8_t>(versionByte);
-    if (version != 2) {
-        log::error("Unsupported .rle version: {}", version);
-        return false;
-    }
+    if (static_cast<uint8_t>(versionByte) != 2) return false;
 
     uint32_t eventCount = readVarint(file);
-
     g_recordedInputs.clear();
     g_recordedInputs.reserve(eventCount);
 
@@ -154,20 +140,14 @@ static bool loadReplay() {
         input.button = action & 0x03;
         input.down = (action & 0x04) != 0;
         input.player2 = (action & 0x08) != 0;
-
         g_recordedInputs.push_back(input);
     }
-
-    log::info("Replay loaded: {} events, {} frames", eventCount, currentFrame);
-    return !g_recordedInputs.empty();
+    return true;
 }
 
 static void updateStatusLabel() {
     if (!g_statusLabel) return;
-    if (!g_statusLabel->getParent()) {
-        g_statusLabel = nullptr;
-        return;
-    }
+    if (!g_statusLabel->getParent()) { g_statusLabel = nullptr; return; }
 
     if (g_isRecording) {
         g_statusLabel->setString(fmt::format("REC: {}", g_currentFrame).c_str());
@@ -176,33 +156,38 @@ static void updateStatusLabel() {
         g_statusLabel->setString("PLAYING...");
         g_statusLabel->setColor({100, 255, 100});
     } else {
-        g_statusLabel->setString(fmt::format("Inputs: {}", g_recordedInputs.size()).c_str());
+        if (!g_loadedMacroName.empty()) {
+            g_statusLabel->setString(g_loadedMacroName.c_str());
+        } else {
+            g_statusLabel->setString(fmt::format("Inputs: {}", g_recordedInputs.size()).c_str());
+        }
         g_statusLabel->setColor({255, 255, 255});
     }
 }
 
 class $modify(MyPlayerObject, PlayerObject) {
     void update(float dt) {
-        PlayerObject::update(dt);
-
-        // Воспроизводим ввод ТОЛЬКО во время update игрока
+        // Воспроизводим ввод перед оригинальным update
         if (g_isPlaying && !g_recordedInputs.empty()) {
             while (g_playbackIndex < g_recordedInputs.size() &&
                    g_recordedInputs[g_playbackIndex].frame <= g_currentFrame) {
                 auto& input = g_recordedInputs[g_playbackIndex];
-
-                // Проверяем, что это наш игрок (P1 или P2)
                 bool isP2 = (PlayLayer::get() && PlayLayer::get()->m_player2 == this);
                 if (input.player2 == isP2) {
-                    if (input.down) {
-                        this->pushButton(static_cast<PlayerButton>(input.button));
-                    } else {
-                        this->releaseButton(static_cast<PlayerButton>(input.button));
+                    int btn = input.button;
+                    if (btn >= 0 && btn < 3) {
+                        if (input.down) {
+                            m_holdingButtons[btn] = true;
+                            m_wasButtonPressed[btn] = true;
+                        } else {
+                            m_holdingButtons[btn] = false;
+                        }
                     }
                 }
                 g_playbackIndex++;
             }
         }
+        PlayerObject::update(dt);
     }
 };
 
@@ -218,12 +203,8 @@ class $modify(MyGJBaseGameLayer, GJBaseGameLayer) {
 class $modify(MyPlayLayer, PlayLayer) {
     void update(float dt) {
         PlayLayer::update(dt);
-        if (g_isRecording) {
-            g_currentFrame++;
-            updateStatusLabel();
-        }
+        if (g_isRecording) { g_currentFrame++; updateStatusLabel(); }
     }
-
     void resetLevel() {
         PlayLayer::resetLevel();
         g_currentFrame = 0;
@@ -239,99 +220,81 @@ class $modify(MyPauseLayer, PauseLayer) {
 
     void customSetup() {
         PauseLayer::customSetup();
-
         auto winSize = CCDirector::get()->getWinSize();
-
-        auto mainMenu = CCMenu::create();
-        mainMenu->setPosition({0, 0});
-        this->addChild(mainMenu);
+        auto mainMenu = CCMenu::create(); mainMenu->setPosition({0, 0}); this->addChild(mainMenu);
 
         auto botBtn = CCMenuItemSpriteExtra::create(
             ButtonSprite::create("BOT", "bigFont.fnt", "GJ_button_01.png"),
             this, menu_selector(MyPauseLayer::onToggle));
-        botBtn->setPosition({winSize.width - 60.f, 60.f});
-        mainMenu->addChild(botBtn);
+        botBtn->setPosition({winSize.width - 60.f, 60.f}); mainMenu->addChild(botBtn);
 
-        m_fields->m_subMenu = CCMenu::create();
-        m_fields->m_subMenu->setPosition({0, 0});
-        m_fields->m_subMenu->setVisible(false);
-        this->addChild(m_fields->m_subMenu);
+        m_fields->m_subMenu = CCMenu::create(); m_fields->m_subMenu->setPosition({0, 0});
+        m_fields->m_subMenu->setVisible(false); this->addChild(m_fields->m_subMenu);
 
-        auto recBtn = CCMenuItemSpriteExtra::create(
-            ButtonSprite::create("REC", "bigFont.fnt", "GJ_button_01.png"),
+        auto recBtn = CCMenuItemSpriteExtra::create(ButtonSprite::create("REC", "bigFont.fnt", "GJ_button_01.png"),
             this, menu_selector(MyPauseLayer::onRecord));
-        recBtn->setPosition({winSize.width - 60.f, 110.f});
-        m_fields->m_subMenu->addChild(recBtn);
+        recBtn->setPosition({winSize.width - 60.f, 110.f}); m_fields->m_subMenu->addChild(recBtn);
 
-        auto playBtn = CCMenuItemSpriteExtra::create(
-            ButtonSprite::create("PLAY", "bigFont.fnt", "GJ_button_02.png"),
+        auto playBtn = CCMenuItemSpriteExtra::create(ButtonSprite::create("PLAY", "bigFont.fnt", "GJ_button_02.png"),
             this, menu_selector(MyPauseLayer::onPlay));
-        playBtn->setPosition({winSize.width - 60.f, 150.f});
-        m_fields->m_subMenu->addChild(playBtn);
+        playBtn->setPosition({winSize.width - 60.f, 150.f}); m_fields->m_subMenu->addChild(playBtn);
 
-        auto saveBtn = CCMenuItemSpriteExtra::create(
-            ButtonSprite::create("SAVE", "bigFont.fnt", "GJ_button_03.png"),
+        auto saveBtn = CCMenuItemSpriteExtra::create(ButtonSprite::create("SAVE", "bigFont.fnt", "GJ_button_03.png"),
             this, menu_selector(MyPauseLayer::onSave));
-        saveBtn->setPosition({winSize.width - 60.f, 190.f});
-        m_fields->m_subMenu->addChild(saveBtn);
+        saveBtn->setPosition({winSize.width - 60.f, 190.f}); m_fields->m_subMenu->addChild(saveBtn);
 
-        auto loadBtn = CCMenuItemSpriteExtra::create(
-            ButtonSprite::create("LOAD", "bigFont.fnt", "GJ_button_04.png"),
-            this, menu_selector(MyPauseLayer::onLoad));
-        loadBtn->setPosition({winSize.width - 60.f, 230.f});
-        m_fields->m_subMenu->addChild(loadBtn);
+        auto searchBtn = CCMenuItemSpriteExtra::create(ButtonSprite::create("SEARCH", "bigFont.fnt", "GJ_button_04.png"),
+            this, menu_selector(MyPauseLayer::onSearch));
+        searchBtn->setPosition({winSize.width - 60.f, 230.f}); m_fields->m_subMenu->addChild(searchBtn);
 
         g_statusLabel = CCLabelBMFont::create("", "bigFont.fnt");
-        g_statusLabel->setScale(0.4f);
-        g_statusLabel->setPosition({winSize.width - 60.f, 95.f});
-        mainMenu->addChild(g_statusLabel);
-        updateStatusLabel();
+        g_statusLabel->setScale(0.4f); g_statusLabel->setPosition({winSize.width - 60.f, 95.f});
+        mainMenu->addChild(g_statusLabel); updateStatusLabel();
     }
 
-    void onToggle(CCObject*) {
-        m_fields->m_expanded = !m_fields->m_expanded;
-        m_fields->m_subMenu->setVisible(m_fields->m_expanded);
-    }
-
+    void onToggle(CCObject*) { m_fields->m_expanded = !m_fields->m_expanded; m_fields->m_subMenu->setVisible(m_fields->m_expanded); }
     void onRecord(CCObject*) {
         if (g_isPlaying) g_isPlaying = false;
         g_isRecording = !g_isRecording;
-        if (g_isRecording) {
-            g_recordedInputs.clear();
-            g_currentFrame = 0;
-        }
+        if (g_isRecording) { g_recordedInputs.clear(); g_currentFrame = 0; g_loadedMacroName = ""; }
         updateStatusLabel();
     }
-
     void onPlay(CCObject*) {
         if (g_isRecording) g_isRecording = false;
-        if (g_recordedInputs.empty()) {
-            FLAlertLayer::create("RLE Bot", "No inputs recorded!", "OK")->show();
-            return;
-        }
+        if (g_recordedInputs.empty()) { FLAlertLayer::create("RLE Bot", "No inputs recorded!", "OK")->show(); return; }
         g_isPlaying = !g_isPlaying;
-        if (g_isPlaying) {
-            g_currentFrame = 0;
-            g_playbackIndex = 0;
-        }
+        if (g_isPlaying) { g_currentFrame = 0; g_playbackIndex = 0; }
         updateStatusLabel();
     }
-
     void onSave(CCObject*) {
-        if (g_recordedInputs.empty()) {
-            FLAlertLayer::create("RLE Bot", "Nothing to save!", "OK")->show();
+        if (g_recordedInputs.empty()) { FLAlertLayer::create("RLE Bot", "Nothing to save!", "OK")->show(); return; }
+        saveReplayAs("macro");
+        FLAlertLayer::create("RLE Bot", "Saved to macro.rle", "OK")->show();
+        updateStatusLabel();
+    }
+    void onSearch(CCObject*) {
+        std::vector<std::string> macroNames;
+        auto dir = getReplayDir();
+        if (std::filesystem::exists(dir)) {
+            for (auto& entry : std::filesystem::directory_iterator(dir)) {
+                if (entry.path().extension() == ".rle") {
+                    macroNames.push_back(entry.path().stem().string());
+                }
+            }
+        }
+
+        if (macroNames.empty()) {
+            FLAlertLayer::create("Search", "No macros found.", "OK")->show();
             return;
         }
-        saveReplay();
-        FLAlertLayer::create("RLE Bot", "Replay saved to replay.rle", "OK")->show();
-    }
 
-    void onLoad(CCObject*) {
-        if (loadReplay()) {
-            FLAlertLayer::create("RLE Bot",
-                fmt::format("Loaded {} events", g_recordedInputs.size()).c_str(), "OK")->show();
+        std::string firstName = macroNames[0];
+        auto fullPath = dir / (firstName + ".rle");
+        if (loadReplayFrom(fullPath)) {
+            g_loadedMacroName = firstName;
+            FLAlertLayer::create("Search", ("Loaded: " + firstName).c_str(), "OK")->show();
         } else {
-            FLAlertLayer::create("RLE Bot", "Failed to load replay.rle", "OK")->show();
+            FLAlertLayer::create("Search", "Failed to load.", "OK")->show();
         }
         updateStatusLabel();
     }
