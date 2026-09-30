@@ -6,9 +6,10 @@
         "ios": "2.2081",
         "mac": "2.2081"
     },
-    "id": "flim.RLE-Bot",
+    "id": "flim.rlebot.geode",
     "name": "RLE Bot",
     "version": "v1.0.0",
     "developer": "flim",
-    "description": "Frame-accurate input recording and playback with .rle format."
+    "description": "Frame-accurate input recording and playback with .rle format.",
+    "logo": "logo.png"
 }
