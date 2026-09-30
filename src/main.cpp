@@ -187,14 +187,8 @@ class $modify(MyPlayLayer, PlayLayer) {
                    g_recordedInputs[g_playbackIndex].frame <= g_currentFrame) {
                 auto& input = g_recordedInputs[g_playbackIndex];
 
-                auto player = input.player2 ? this->m_player2 : this->m_player1;
-                if (player) {
-                    if (input.down) {
-                        player->pushButton(static_cast<PlayerButton>(input.button));
-                    } else {
-                        player->releaseButton(static_cast<PlayerButton>(input.button));
-                    }
-                }
+                // handleButton принимает bool, int, bool
+                this->handleButton(input.down, input.button, input.player2);
                 g_playbackIndex++;
             }
         }
