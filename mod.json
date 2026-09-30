@@ -32,7 +32,7 @@
             "min": 1.0,
             "max": 240.0,
             "control": {
-                "type": "text-input"
+                "type": "slider"
             }
         }
     }
